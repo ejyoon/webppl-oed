@@ -53,6 +53,15 @@ var getBestExpt = function(expts) {
     }, {x: null, EIG: -Infinity}, expts);
 };
 
+// Retrieve from cache if possible, otherwise fall back to model function.
+var retrieveCache = function(cache, mName, mFunc, x, y) {
+    return (
+        cache[mName] && cache[mName][x.name] && cache[mName][x.name][y.name]
+    ) || (
+        mFunc(x, y)
+    );
+};
+
 // TODO: using this on priors and posteriors Just Works when the supports
 // are {name: ..., func: ...} objects, which is a little surprising
 // figure out why this works
@@ -88,6 +97,12 @@ var updatePosterior = function(args) {
         inferM1 = infer.M1 || Enumerate,
         inferM2 = infer.M2 || Enumerate;
 
+    // Caching here is optional: it's useful if computing scores is quite
+    // expensive and, importantly, the responses in ySample are exactly the
+    // responses you'll receive
+    var cache = args.cache || {},
+        doCaching = !_.isEmpty(cache);
+
     var mPrior = args.mPrior || inferM1(function() {
         var m = M();
         return {name: m.name, func: m};
@@ -95,8 +110,10 @@ var updatePosterior = function(args) {
 
     var mPosterior = inferM2(function() {
         var mData = sample(mPrior), mName = mData.name, mFunc = mData.func;
-        var LL = mFunc(x,y);
-        factor(LL);
+        var ll = (doCaching) ?
+            retrieveCache(cache, mName, mFunc, x, y) :
+            mFunc(x, y);
+        factor(ll);
         return mData;
     });
 
@@ -127,15 +144,6 @@ var EIG = function(args) {
     var cache = args.cache || {},
         doCaching = !_.isEmpty(cache);
 
-    // Retrieve from cache if possible, otherwise fall back to model function.
-    var retrieveCache = function(mName, mFunc, x, y) {
-        return (
-            cache[mName] && cache[mName][x.name] && cache[mName][x.name][y.name]
-        ) || (
-            mFunc(x, y)
-        );
-    };
-
     // Construct mPrior either 1) if it's provided in args, or 2) from the
     // model sample function. Note that args.mPrior overrides args.M if both
     // are present
@@ -153,7 +161,7 @@ var EIG = function(args) {
             var mPosterior = inferM2(function() {
                 var _m = sample(mPrior), mName = _m.name, mFunc = _m.func;
                 var ll = (doCaching) ?
-                    retrieveCache(mName, mFunc, x, y) :
+                    retrieveCache(cache, mName, mFunc, x, y) :
                     mFunc(x, y);
                 factor(ll);
                 return {m: _m, ll: ll};
